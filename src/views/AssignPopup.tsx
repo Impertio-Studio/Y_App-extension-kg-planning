@@ -157,7 +157,7 @@ function AssignRow({ emp, checked, disabled, onToggle }: {
       >
         <input type="checkbox" checked={checked} readOnly className="cursor-pointer" />
         {avatar ? (
-          <img src={avatar} alt="" className="w-6 h-6 rounded-full object-cover border border-slate-200" />
+          <img src={avatar} alt="" loading="lazy" className="w-6 h-6 rounded-full object-cover border border-slate-200" />
         ) : (
           <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-500">
             {initials(emp.employee_name)}

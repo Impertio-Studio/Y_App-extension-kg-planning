@@ -608,7 +608,7 @@ function AvatarThumb({ emp, offsetLeft }: { emp: EmployeeData; offsetLeft: numbe
   const title = emp.employee_name;
   const style = { marginLeft: offsetLeft } as const;
   if (src) {
-    return <img src={src} alt={title} title={title} className="w-[22px] h-[22px] rounded-full object-cover border border-white" style={style} />;
+    return <img src={src} alt={title} title={title} loading="lazy" className="w-[22px] h-[22px] rounded-full object-cover border border-white" style={style} />;
   }
   return (
     <div

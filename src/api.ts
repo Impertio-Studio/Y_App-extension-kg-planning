@@ -70,6 +70,7 @@ const PROJECT_FIELDS = [
   "project_name",
   "custom_project_number",
   "custom_project_manager",
+  "status",
 ];
 
 /** Detect "field doesn't exist" style errors coming back from ERPNext.

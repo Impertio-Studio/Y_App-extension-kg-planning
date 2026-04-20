@@ -12,6 +12,8 @@ export default function FilterBar() {
     setSelectedProject,
     selectedCoordinator,
     setSelectedCoordinator,
+    selectedStatus,
+    setSelectedStatus,
   } = useKgPlanning();
 
   const employees = data?.employees ?? [];
@@ -50,6 +52,20 @@ export default function FilterBar() {
             value: p.name,
             label: `${p.custom_project_number ?? ""} ${p.project_name}`.trim(),
           }))}
+        />
+      )}
+
+      {activeView !== "team" && (
+        <FilterSelect
+          label="Status"
+          value={selectedStatus}
+          onChange={setSelectedStatus}
+          placeholder="Alle statussen"
+          options={[
+            { value: "Open", label: "Open" },
+            { value: "Completed", label: "Afgerond" },
+            { value: "Hold", label: "On hold" },
+          ]}
         />
       )}
 

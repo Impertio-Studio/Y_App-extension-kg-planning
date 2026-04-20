@@ -51,6 +51,8 @@ export interface ProjectData {
   project_name: string;
   custom_project_number: string;
   custom_project_manager: string;
+  /** ERPNext standard field: Open | Completed | Cancelled | Hold. */
+  status: string;
 }
 
 export interface PlanningData {

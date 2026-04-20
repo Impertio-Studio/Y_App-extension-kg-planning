@@ -25,6 +25,9 @@ interface KgPlanningState {
   selectedEmployee: string | null;
   selectedProject: string | null;
   selectedCoordinator: string | null;
+  /** Project status filter. Defaults to "Open" so the grid hides
+   *  Completed / Cancelled / Hold projects on first load. */
+  selectedStatus: string | null;
   activeView: ViewMode;
 
   // Actions
@@ -32,6 +35,7 @@ interface KgPlanningState {
   setSelectedEmployee: (v: string | null) => void;
   setSelectedProject: (v: string | null) => void;
   setSelectedCoordinator: (v: string | null) => void;
+  setSelectedStatus: (v: string | null) => void;
   setActiveView: (v: ViewMode) => void;
 
   savePlannedHours: (taskName: string, employee: string, employeeName: string, weekStart: string, hours: number) => void;
@@ -60,6 +64,7 @@ export function KgPlanningProvider({ children }: { children: ReactNode }) {
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedCoordinator, setSelectedCoordinator] = useState<string | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>("Open");
   const [activeView, setActiveView] = useState<ViewMode>("grid");
 
   // Abort phase-2 hydration when reload is re-triggered or the provider
@@ -251,11 +256,13 @@ export function KgPlanningProvider({ children }: { children: ReactNode }) {
     selectedEmployee,
     selectedProject,
     selectedCoordinator,
+    selectedStatus,
     activeView,
     reload,
     setSelectedEmployee,
     setSelectedProject,
     setSelectedCoordinator,
+    setSelectedStatus,
     setActiveView,
     savePlannedHours,
     saveProgress,

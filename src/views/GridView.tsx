@@ -77,7 +77,7 @@ const LEFT_COLS_BASE: GridCol[] = [
   { id: "project",  label: "Project",  default: 180 },
   { id: "phase",    label: "Fase",     default: 68  },
   { id: "coord",    label: "Verantw.", default: 80  },
-  { id: "medew",    label: "Medew.",   default: 90, title: "Toegewezen medewerkers" },
+  { id: "medew",    label: "Medew.",   default: 50, title: "Toegewezen medewerkers" },
   { id: "budget",   label: "Budget",   default: 56  },
   { id: "progress", label: "Voortg.",  default: 56, title: "Werkelijke voortgang" },
   { id: "planned",  label: "Ingepl.",  default: 56, title: "Som ingeplande uren" },
@@ -88,6 +88,7 @@ export default function GridView() {
     data,
     selectedEmployee,
     selectedProject,
+    selectedStatus,
     savePlannedHours,
     getProjectByName,
     getEmployeeById,
@@ -142,7 +143,11 @@ export default function GridView() {
   const weeks = useMemo<WeekInfo[]>(() => generateWeeksFromNow(26, 1), []);
 
   const rows = useMemo<Row[]>(() => {
-    const openProjectNames = new Set(projects.map((p) => p.name));
+    // Status filter is applied before we build the allowed-projects set so
+    // tasks belonging to e.g. Completed / Hold projects disappear from the
+    // grid entirely when a status filter is active.
+    const filteredProjects = selectedStatus ? projects.filter((p) => p.status === selectedStatus) : projects;
+    const openProjectNames = new Set(filteredProjects.map((p) => p.name));
 
     // Filter: only open projects, not done, match project filter, and
     // (if employee filter is active) the task must have that employee
@@ -231,7 +236,7 @@ export default function GridView() {
       result.push(...toRows(internalLeave));
     }
     return result;
-  }, [tasks, projects, selectedEmployee, selectedProject, getProjectByName, getEmployeeById, isInternalProject]);
+  }, [tasks, projects, selectedEmployee, selectedProject, selectedStatus, getProjectByName, getEmployeeById, isInternalProject]);
 
   // Week totals across all rows. useMemo rebuilds on every row change,
   // which is every optimistic edit — O(rows × weeks) is fine for the
@@ -580,7 +585,7 @@ function AvatarStack({
     <div className="flex items-center gap-0">
       <div className="flex items-center">
         {assigned.map((emp, i) => (
-          <AvatarThumb key={emp.name} emp={emp} offsetLeft={i === 0 ? 0 : -4} />
+          <AvatarThumb key={emp.name} emp={emp} offsetLeft={i === 0 ? 0 : -3} />
         ))}
       </div>
       <button
@@ -608,12 +613,12 @@ function AvatarThumb({ emp, offsetLeft }: { emp: EmployeeData; offsetLeft: numbe
   const title = emp.employee_name;
   const style = { marginLeft: offsetLeft } as const;
   if (src) {
-    return <img src={src} alt={title} title={title} loading="lazy" className="w-[22px] h-[22px] rounded-full object-cover border border-white" style={style} />;
+    return <img src={src} alt={title} title={title} loading="lazy" className="w-[18px] h-[18px] rounded-full object-cover border border-white" style={style} />;
   }
   return (
     <div
       title={title}
-      className="w-[22px] h-[22px] rounded-full bg-slate-300 border border-white flex items-center justify-center text-[9px] font-semibold text-slate-700"
+      className="w-[18px] h-[18px] rounded-full bg-slate-300 border border-white flex items-center justify-center text-[9px] font-semibold text-slate-700"
       style={style}
     >
       {initials(emp.employee_name)}

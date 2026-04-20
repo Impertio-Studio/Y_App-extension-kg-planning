@@ -61,6 +61,8 @@ const EMPLOYEE_FIELDS = [
   "custom_contract_days_per_week",
   "custom_contract_hours_per_week",
   "custom_department_function",
+  "image",
+  "user_id",
 ];
 
 const PROJECT_FIELDS = [

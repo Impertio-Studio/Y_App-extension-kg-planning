@@ -40,6 +40,10 @@ export interface EmployeeData {
   custom_contract_days_per_week: number;
   custom_contract_hours_per_week: number;
   custom_department_function: string;
+  /** ERPNext-hosted avatar path (relative, e.g. /private/files/xxx.jpg). */
+  image: string | null;
+  /** Linked User doctype name (email). Required by frappe.desk.form.assign_to.add. */
+  user_id: string | null;
 }
 
 export interface ProjectData {

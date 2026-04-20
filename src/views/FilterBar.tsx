@@ -24,7 +24,10 @@ export default function FilterBar() {
         value={selectedEmployee}
         onChange={setSelectedEmployee}
         placeholder="Alle medewerkers"
-        options={employees.map((e) => ({ value: e.name, label: e.employee_name }))}
+        options={[
+          { value: "__unplanned__", label: "\u26A0 Nog niet ingepland" },
+          ...employees.map((e) => ({ value: e.name, label: e.employee_name })),
+        ]}
       />
 
       {activeView === "gantt" && (
@@ -98,7 +101,7 @@ function FilterSelect({ label, value, onChange, placeholder, options }: FilterSe
  *  Displays contract details for context. */
 export function EmployeeInfoBar() {
   const { selectedEmployee, getEmployeeById } = useKgPlanning();
-  if (!selectedEmployee) return null;
+  if (!selectedEmployee || selectedEmployee === "__unplanned__") return null;
   const emp = getEmployeeById(selectedEmployee);
   if (!emp) return null;
 

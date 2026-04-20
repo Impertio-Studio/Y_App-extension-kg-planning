@@ -3,10 +3,11 @@ import { useKgPlanning } from "../store";
 import { generateWeeksFromNow, getCurrentWeek, type WeekInfo } from "../utils/weeks";
 import { getPhaseColors, plannedColor, plannedPercentage } from "../utils/phases";
 import { getFirstName } from "../utils/helpers";
-import { getErpNextAppUrl } from "../bridge";
-import type { TaskData } from "../types";
+import { getErpNextAppUrl, fetchPrivateFileUrl } from "../bridge";
+import type { TaskData, EmployeeData } from "../types";
 import EditableCell from "./EditableCell";
 import ProgressPopover from "./ProgressPopover";
+import AssignPopup from "./AssignPopup";
 import { type CellRange, normalizeRange, toClipboardText, parseClipboard, rangeContains } from "../utils/clipboard";
 import { useColumnResize } from "../utils/useColumnResize";
 
@@ -71,11 +72,12 @@ interface GridCol {
   title?: string;
   default: number;
 }
-const LEFT_COLS: GridCol[] = [
+const LEFT_COLS_BASE: GridCol[] = [
   { id: "nr",       label: "Nr",       default: 56  },
   { id: "project",  label: "Project",  default: 180 },
   { id: "phase",    label: "Fase",     default: 68  },
   { id: "coord",    label: "Verantw.", default: 80  },
+  { id: "medew",    label: "Medew.",   default: 90, title: "Toegewezen medewerkers" },
   { id: "budget",   label: "Budget",   default: 56  },
   { id: "progress", label: "Voortg.",  default: 56, title: "Werkelijke voortgang" },
   { id: "planned",  label: "Ingepl.",  default: 56, title: "Som ingeplande uren" },
@@ -93,20 +95,39 @@ export default function GridView() {
   } = useKgPlanning();
 
   const [progressFor, setProgressFor] = useState<TaskRow | null>(null);
+  const [assignFor, setAssignFor] = useState<{ task: TaskData; anchor: { x: number; y: number } } | null>(null);
+
+  // The Medew. column is hidden when filtering to a specific employee —
+  // the avatar stack becomes irrelevant once the view is narrowed to one
+  // person. `__unplanned__` still shows it (the avatar slot is empty and
+  // the "+" button is the whole UI for that filter mode).
+  const showMedewCol = !selectedEmployee || selectedEmployee === "__unplanned__";
+  const LEFT_COLS = useMemo(
+    () => LEFT_COLS_BASE.filter((c) => c.id !== "medew" || showMedewCol),
+    [showMedewCol],
+  );
 
   // Drag-resizable sticky left columns. Widths persist per-instance in
   // localStorage; a missing entry falls back to the `default` from LEFT_COLS.
   const { widths, startResize } = useColumnResize({ storageKey: "kg-grid-col-widths" });
   const colGeom = useMemo(() => {
+    const byId = new Map<string, { id: string; width: number; left: number }>();
     const out: { id: string; width: number; left: number }[] = [];
     let acc = 0;
     for (const c of LEFT_COLS) {
       const w = widths[c.id] ?? c.default;
-      out.push({ id: c.id, width: w, left: acc });
+      const entry = { id: c.id, width: w, left: acc };
+      out.push(entry);
+      byId.set(c.id, entry);
       acc += w;
     }
-    return { cols: out, totalLeft: acc };
-  }, [widths]);
+    return { cols: out, byId, totalLeft: acc };
+  }, [widths, LEFT_COLS]);
+  const col = (id: string) => {
+    const g = colGeom.byId.get(id);
+    if (!g) throw new Error(`Unknown column id: ${id}`);
+    return g;
+  };
 
   // Clipboard selection: rectangular range expressed in GridView row/col
   // indices. `row` is the index into `rows[]` (not `taskRows[]`), so a
@@ -130,7 +151,11 @@ export default function GridView() {
       if (!openProjectNames.has(t.project)) return false;
       if (t.progress >= 100) return false;
       if (selectedProject && t.project !== selectedProject) return false;
-      if (selectedEmployee && t.assigned_employees && !t.assigned_employees.includes(selectedEmployee)) return false;
+      if (selectedEmployee === "__unplanned__") {
+        if (t.assigned_employees && t.assigned_employees.length > 0) return false;
+      } else if (selectedEmployee && t.assigned_employees && !t.assigned_employees.includes(selectedEmployee)) {
+        return false;
+      }
       return true;
     });
 
@@ -350,7 +375,7 @@ export default function GridView() {
           </tr>
           {/* TOTAAL row — lives in <thead> so it stays pinned under the week labels */}
           <tr className="bg-slate-50 font-semibold">
-            <th colSpan={7} className="sticky left-0 bg-slate-50 px-3 py-2 text-left z-10 border-b border-slate-200">
+            <th colSpan={LEFT_COLS.length} className="sticky left-0 bg-slate-50 px-3 py-2 text-left z-10 border-b border-slate-200">
               TOTAAL uren
             </th>
             {weeks.map((w) => {
@@ -373,7 +398,7 @@ export default function GridView() {
             if (row.kind === "internal-header") {
               return (
                 <tr key={`header-${i}`} className="bg-slate-100 border-y border-slate-300">
-                  <td colSpan={7 + weeks.length} className="px-3 py-1.5 text-xs font-bold text-slate-700">
+                  <td colSpan={LEFT_COLS.length + weeks.length} className="px-3 py-1.5 text-xs font-bold text-slate-700">
                     Interne uren
                   </td>
                 </tr>
@@ -390,31 +415,31 @@ export default function GridView() {
                 {isFirstOfProject && (
                   <>
                     <StickyTd
-                      left={colGeom.cols[0].left}
+                      left={col("nr").left}
                       rowSpan={projectRowSpan}
                       className="font-semibold align-top"
-                      style={{ width: colGeom.cols[0].width, minWidth: colGeom.cols[0].width }}
+                      style={{ width: col("nr").width, minWidth: col("nr").width }}
                     >
                       {projectNumber}
                     </StickyTd>
                     <StickyTd
-                      left={colGeom.cols[1].left}
+                      left={col("project").left}
                       rowSpan={projectRowSpan}
                       className="font-semibold align-top cursor-pointer hover:text-blue-600"
                       title={projectName}
                       onClick={() => window.open(`${erpUrl}/app/project/${task.project}`, "_blank")}
-                      style={{ width: colGeom.cols[1].width, minWidth: colGeom.cols[1].width }}
+                      style={{ width: col("project").width, minWidth: col("project").width }}
                     >
                       {projectName}
                     </StickyTd>
                   </>
                 )}
                 <StickyTd
-                  left={colGeom.cols[2].left}
+                  left={col("phase").left}
                   className="align-top cursor-pointer"
                   title={task.subject}
                   onClick={() => window.open(`${erpUrl}/app/task/${task.name}`, "_blank")}
-                  style={{ width: colGeom.cols[2].width, minWidth: colGeom.cols[2].width }}
+                  style={{ width: col("phase").width, minWidth: col("phase").width }}
                 >
                   <span
                     className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold"
@@ -425,34 +450,50 @@ export default function GridView() {
                 </StickyTd>
                 {isFirstOfProject && (
                   <StickyTd
-                    left={colGeom.cols[3].left}
+                    left={col("coord").left}
                     rowSpan={projectRowSpan}
                     className="text-slate-600 align-top"
-                    style={{ width: colGeom.cols[3].width, minWidth: colGeom.cols[3].width }}
+                    style={{ width: col("coord").width, minWidth: col("coord").width }}
                   >
                     {coordinator}
                   </StickyTd>
                 )}
+                {showMedewCol && (
+                  <StickyTd
+                    left={col("medew").left}
+                    className="align-top"
+                    style={{ width: col("medew").width, minWidth: col("medew").width }}
+                  >
+                    <AvatarStack
+                      task={task}
+                      employees={data?.employees ?? []}
+                      onAdd={(e) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setAssignFor({ task, anchor: { x: r.right + 4, y: r.top } });
+                      }}
+                    />
+                  </StickyTd>
+                )}
                 <StickyTd
-                  left={colGeom.cols[4].left}
+                  left={col("budget").left}
                   className="text-slate-600 align-top"
-                  style={{ width: colGeom.cols[4].width, minWidth: colGeom.cols[4].width }}
+                  style={{ width: col("budget").width, minWidth: col("budget").width }}
                 >
                   {task.custom_budget_hours ? `${task.custom_budget_hours}u` : ""}
                 </StickyTd>
                 <StickyTd
-                  left={colGeom.cols[5].left}
+                  left={col("progress").left}
                   className="align-top cursor-pointer"
-                  style={{ background: "#e8f4e8", width: colGeom.cols[5].width, minWidth: colGeom.cols[5].width }}
+                  style={{ background: "#e8f4e8", width: col("progress").width, minWidth: col("progress").width }}
                   title="Klik om voortgang bij te werken"
                   onClick={() => setProgressFor(row)}
                 >
                   {Math.round(task.progress || 0)}%
                 </StickyTd>
                 <StickyTd
-                  left={colGeom.cols[6].left}
+                  left={col("planned").left}
                   className="align-top"
-                  style={{ color: plannedColor(pct), width: colGeom.cols[6].width, minWidth: colGeom.cols[6].width }}
+                  style={{ color: plannedColor(pct), width: col("planned").width, minWidth: col("planned").width }}
                 >
                   {pct > 0 ? `${pct}%` : ""}
                 </StickyTd>
@@ -498,8 +539,91 @@ export default function GridView() {
           onClose={() => setProgressFor(null)}
         />
       )}
+
+      {assignFor && (
+        <AssignPopup
+          taskName={assignFor.task.name}
+          taskSubject={assignFor.task.subject}
+          assignedEmployees={assignFor.task.assigned_employees ?? []}
+          anchor={assignFor.anchor}
+          onClose={() => setAssignFor(null)}
+        />
+      )}
     </div>
   );
+}
+
+/* ─── Avatar stack + "+" assign button ─── */
+// Rendered inside the Medew. column. The task.assigned_employees list is
+// user emails (Frappe _assign semantics), so we resolve them back to
+// Employee.image via the user_id → employee map.
+function AvatarStack({
+  task,
+  employees,
+  onAdd,
+}: {
+  task: TaskData;
+  employees: EmployeeData[];
+  onAdd: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const byUserId = useMemo(() => {
+    const m = new Map<string, EmployeeData>();
+    for (const e of employees) if (e.user_id) m.set(e.user_id, e);
+    return m;
+  }, [employees]);
+
+  const assigned = (task.assigned_employees ?? []).map((uid) => byUserId.get(uid)).filter((e): e is EmployeeData => !!e);
+
+  return (
+    <div className="flex items-center gap-0">
+      <div className="flex items-center">
+        {assigned.map((emp, i) => (
+          <AvatarThumb key={emp.name} emp={emp} offsetLeft={i === 0 ? 0 : -4} />
+        ))}
+      </div>
+      <button
+        onClick={onAdd}
+        className="ml-1 w-5 h-5 rounded-full bg-slate-100 border border-slate-300 text-slate-600 text-[12px] leading-none flex items-center justify-center hover:bg-slate-200 cursor-pointer"
+        title="Medewerker toewijzen"
+        aria-label="Assign employee"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function AvatarThumb({ emp, offsetLeft }: { emp: EmployeeData; offsetLeft: number }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPrivateFileUrl(emp.image).then((url) => {
+      if (!cancelled) setSrc(url);
+    });
+    return () => { cancelled = true; };
+  }, [emp.image]);
+
+  const title = emp.employee_name;
+  const style = { marginLeft: offsetLeft } as const;
+  if (src) {
+    return <img src={src} alt={title} title={title} className="w-[22px] h-[22px] rounded-full object-cover border border-white" style={style} />;
+  }
+  return (
+    <div
+      title={title}
+      className="w-[22px] h-[22px] rounded-full bg-slate-300 border border-white flex items-center justify-center text-[9px] font-semibold text-slate-700"
+      style={style}
+    >
+      {initials(emp.employee_name)}
+    </div>
+  );
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 /* ─── Sticky header / body cells for the left pane ─── */

@@ -24,7 +24,8 @@ type RpcMethod =
   | "updateDocument"
   | "callMethod"
   | "getActiveInstanceId"
-  | "getErpNextAppUrl";
+  | "getErpNextAppUrl"
+  | "fetchPrivateFile";
 
 interface RpcEnvelope {
   id: string;
@@ -108,4 +109,26 @@ export function getErpNextAppUrl(): string {
 /** Convenience — same shape as Y-app's lib/instances.getActiveInstanceId(). */
 export function getActiveInstanceId(): string {
   return INSTANCE_ID;
+}
+
+/**
+ * Fetch a private ERPNext file (e.g. Employee.image) via the host bridge.
+ * The iframe has no ERPNext session cookie, so we round-trip through the
+ * parent tab which holds the bridged session. Returns an inline `data:`
+ * URL ready to drop into an `<img src>`.
+ *
+ * Per-path cache avoids refetching the same avatar N times per render.
+ * Unresolved paths resolve to `null` so the caller can fall back to a
+ * default avatar without tripping into an error state.
+ */
+const fileUrlCache = new Map<string, Promise<string | null>>();
+export function fetchPrivateFileUrl(path: string | null | undefined): Promise<string | null> {
+  if (!path) return Promise.resolve(null);
+  const existing = fileUrlCache.get(path);
+  if (existing) return existing;
+  const p = rpc<{ contentType: string; base64: string }>("fetchPrivateFile", path)
+    .then((r) => `data:${r.contentType};base64,${r.base64}`)
+    .catch(() => null);
+  fileUrlCache.set(path, p);
+  return p;
 }

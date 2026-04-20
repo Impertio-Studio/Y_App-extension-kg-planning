@@ -199,6 +199,52 @@ export async function savePlannedHours(
   await updateDocument("Task", taskName, { custom_planned_hours: rows });
 }
 
+/** Batched variant: apply a list of (employee, week_start, hours) edits
+ *  to a single task in one fetch→splice→save round-trip. Used by the
+ *  store's debounced flush so a burst of edits across multiple cells of
+ *  the same task doesn't reduce to a single edit (the old behavior lost
+ *  all but the last cell's write when the debounce collapsed them).
+ *
+ *  Ports the intent of upstream Kort-Geytenbeek 793b54c — "prevent
+ *  duplicate planned hours on rapid edits" — into the batched shape our
+ *  React store expects (upstream kept a per-task rows cache instead;
+ *  batching is equivalent and fits our existing debounce layer). */
+export interface PlannedHoursEdit {
+  employee: string;
+  employee_name: string;
+  week_start: string;
+  planned_hours: number;
+}
+
+export async function savePlannedHoursBatch(taskName: string, edits: PlannedHoursEdit[]): Promise<void> {
+  if (edits.length === 0) return;
+  const doc = await fetchDocument<{ custom_planned_hours?: PlannedHourRow[] }>("Task", taskName);
+  const rows: PlannedHourRow[] = (doc.custom_planned_hours || []).map((r) => ({ ...r }));
+
+  for (const edit of edits) {
+    // String coerce on week_start because ERPNext occasionally returns
+    // Date objects mid-marshaling; the key compare must not match
+    // Object.is-different-but-equal representations.
+    const idx = rows.findIndex(
+      (r) => r.employee === edit.employee && String(r.week_start) === String(edit.week_start),
+    );
+    if (edit.planned_hours === 0) {
+      if (idx >= 0) rows.splice(idx, 1);
+    } else if (idx >= 0) {
+      rows[idx] = { ...rows[idx], planned_hours: edit.planned_hours };
+    } else {
+      rows.push({
+        employee: edit.employee,
+        employee_name: edit.employee_name,
+        week_start: edit.week_start,
+        planned_hours: edit.planned_hours,
+      });
+    }
+  }
+
+  await updateDocument("Task", taskName, { custom_planned_hours: rows });
+}
+
 export async function saveProgress(taskName: string, progress: number): Promise<void> {
   await updateDocument("Task", taskName, { progress });
 }

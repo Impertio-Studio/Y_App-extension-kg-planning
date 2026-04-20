@@ -5,7 +5,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { loadPlanningSkeleton, hydratePlannedHours, savePlannedHours as apiSavePlannedHours, saveProgress as apiSaveProgress } from "./api";
+import { loadPlanningSkeleton, hydratePlannedHours, savePlannedHoursBatch as apiSavePlannedHoursBatch, saveProgress as apiSaveProgress, type PlannedHoursEdit } from "./api";
 import type { EmployeeData, PlanningData, PlannedHourRow, ProjectData, TaskData } from "./types";
 
 type ViewMode = "grid" | "gantt" | "team";
@@ -136,11 +136,17 @@ export function KgPlanningProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   // Debounced writes for planned-hours cells. Each task has its own timer
-  // so fast typing in one cell doesn't delay saves to other tasks. On
-  // unmount we flush pending timers by clearing them — the in-memory
-  // optimistic state is already on screen; the missed save shows up as
-  // stale-on-next-load, which is acceptable for a background autosave.
+  // so fast typing in one cell doesn't delay saves to other tasks.
+  //
+  // A burst of edits on the same task accumulates into `pendingEditsRef`
+  // — we flush all of them in a single batched API call once the
+  // debounce fires. The old behavior passed only the last edit to a
+  // single-cell API, which silently dropped every other cell the user
+  // had touched within the 500 ms window. See upstream commit 793b54c
+  // ("prevent duplicate planned hours on rapid edits") for the original
+  // motivation.
   const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingEditsRef = useRef<Map<string, PlannedHoursEdit[]>>(new Map());
 
   const savePlannedHours = useCallback<KgPlanningState["savePlannedHours"]>(
     (taskName, employee, employeeName, weekStart, hours) => {
@@ -165,13 +171,26 @@ export function KgPlanningProvider({ children }: { children: ReactNode }) {
         return { ...prev, tasks };
       });
 
+      // Append/replace the pending edit for this (task, employee, week).
+      // Replace (not append) so tapping the same cell twice before the
+      // debounce fires sends the final value, not both values.
+      const pending = pendingEditsRef.current.get(taskName) ?? [];
+      const dedupIdx = pending.findIndex((p) => p.employee === employee && p.week_start === weekStart);
+      const edit: PlannedHoursEdit = { employee, employee_name: employeeName, week_start: weekStart, planned_hours: hours };
+      if (dedupIdx >= 0) pending[dedupIdx] = edit;
+      else pending.push(edit);
+      pendingEditsRef.current.set(taskName, pending);
+
       const timers = saveTimersRef.current;
       const existing = timers.get(taskName);
       if (existing) clearTimeout(existing);
       const handle = setTimeout(async () => {
         timers.delete(taskName);
+        const edits = pendingEditsRef.current.get(taskName) ?? [];
+        pendingEditsRef.current.delete(taskName);
+        if (edits.length === 0) return;
         try {
-          await apiSavePlannedHours(taskName, employee, employeeName, weekStart, hours);
+          await apiSavePlannedHoursBatch(taskName, edits);
         } catch (err) {
           // Rollback to server truth: re-fetch the whole dataset. Coarse
           // but simple — a per-cell rollback would need to snapshot state
@@ -187,9 +206,11 @@ export function KgPlanningProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const timers = saveTimersRef.current;
+    const pending = pendingEditsRef.current;
     return () => {
       for (const h of timers.values()) clearTimeout(h);
       timers.clear();
+      pending.clear();
     };
   }, []);
 

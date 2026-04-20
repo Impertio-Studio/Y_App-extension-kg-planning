@@ -254,7 +254,7 @@ export default function GridView() {
 
   function handleSaveCell(row: TaskRow, weekIso: string, value: number) {
     const emp = selectedEmployee;
-    if (!emp) {
+    if (!emp || emp === "__unplanned__") {
       alert("Selecteer eerst een medewerker om uren in te plannen.");
       return;
     }
@@ -318,9 +318,11 @@ export default function GridView() {
         for (let rr = 0; rr < grid.length; rr++) {
           const taskRow = rows[norm.startRow + rr];
           if (!taskRow || taskRow.kind !== "task") continue;
-          // Destination employee: current filter if set, else the task's
-          // first assigned employee. Multi-employee paste is out of scope.
-          const selectedEmpId = selectedEmployee ?? taskRow.task.assigned_employees?.[0];
+          // Destination employee: current filter if set (and not the
+          // synthetic __unplanned__ sentinel), else the task's first
+          // assigned employee. Multi-employee paste is out of scope.
+          const filterEmp = selectedEmployee === "__unplanned__" ? null : selectedEmployee;
+          const selectedEmpId = filterEmp ?? taskRow.task.assigned_employees?.[0];
           if (!selectedEmpId) continue;
           const emp = getEmployeeById(selectedEmpId);
           if (!emp) continue;
